@@ -1,7 +1,6 @@
 config = {}
 config['seed'] = [2023]  # Pheme为2023，我们的是2023
-config['epochs'] = [60]  # 原始为20，我们的是60
-# config['epochs'] = [20]
+config['epochs'] = [60]  
 config['batch_size'] = [64]
 config['use_stopwords'] = [True]
 config['maxlen'] = [50]
