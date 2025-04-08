@@ -1,12 +1,3 @@
-"""
-多模态融合+对比学习
-其中对比学习用于将同标签的距离拉近，不同标签的距离拉远
-使用对比学习进行模态对齐
-此处的loss之间的权重为手动设置
-
-在best的基础上去掉梯度裁剪
-"""
-## 初始最佳：0.8835
 
 import os
 
@@ -74,7 +65,6 @@ class NeuralNetwork(nn.Module):
 
     def mfan(self, x_tid, x_text, y, loss, i, total, params, pgd_word):
         self.optimizer.zero_grad()
-        # 这里调用mfan的forward
         logit_original, dist_og, hidden, features = self.forward(x_tid, x_text)
         loss_classification = loss(logit_original, y)
         # 分类损失
@@ -83,7 +73,6 @@ class NeuralNetwork(nn.Module):
         loss_dis = loss_mse(dist_og[0], dist_og[1])
 
         # hidden的shape为[batch_size,output_dim]
-        # 此时features的shape为[batch_size,2,output_dim],为每一份数据创建了一个副本，进行对比
         loss_cons = SupConLoss(temperature=0.5)
         loss_constrative = loss_cons(features, y)
 
@@ -268,14 +257,10 @@ class MARN(NeuralNetwork):
         if self.config['user_self_attention'] == True:
             X_text = self.mh_attention(X_text, X_text, X_text)
 
-        ## 修改文本编码器为lstm
         X_text, _ = self.text_embedding(X_text)
         X_text = X_text.permute(0, 2, 1)
         # 从GAT获取传播结构
         rembedding = self.gat_relation.forward(X_tid)
-        # resnet50获取图像嵌入
-        # iembedding = self.image_embedding.forward(X_tid)
-        ## 更换图像编码器为Cliptengx
         iembedding = self.image_embedding2.forward(X_tid)
         conv_block = [rembedding]
         for _, (Conv, max_pooling) in enumerate(zip(self.convs, self.max_poolings)):
@@ -384,14 +369,14 @@ def train_and_test(model):
     original_adj = load_original_adj(adj)
     nn = model(config, adj, original_adj)
 
-    # nn.fit(X_train_tid, X_train, y_train,
-    #        X_dev_tid, X_dev, y_dev)
+    nn.fit(X_train_tid, X_train, y_train,
+           X_dev_tid, X_dev, y_dev)
     #
     # nn.load_state_dict(torch.load(
-    #     "exp_result/pheme/exp_description/best_model_in_each_config/Thread-1_configsingle3_best_model_weights_mfanlstmwithclip_nllLoss"))
+    #     "exp_result/pheme/exp_description/best_model_in_each_config/Thread-1_configsingle3_best_model_weights_marnlstmwithclip_nllLoss"))
 
     # 最佳模型
-    nn.load_state_dict(torch.load("exp_result/pheme/exp_description/best_model_in_each_config/best_model"))
+    # nn.load_state_dict(torch.load("exp_result/pheme/exp_description/best_model_in_each_config/best_model"))
 
     y_pred = nn.predict(X_test_tid, X_test)
     res = classification_report(y_test, y_pred, target_names=config['target_names'], digits=3, output_dict=True)
