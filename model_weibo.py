@@ -1,11 +1,3 @@
-"""
-多模态融合+对比学习
-其中对比学习用于将同标签的距离拉近，不同标签的距离拉远
-使用对比学习进行模态对齐
-此处的loss之间的权重为手动设置
-
-在best的基础上去掉梯度裁剪
-"""
 
 import os
 
@@ -73,7 +65,6 @@ class NeuralNetwork(nn.Module):
 
     def mfan(self, x_tid, x_text, y, loss, i, total, params, pgd_word):
         self.optimizer.zero_grad()
-        # 这里调用mfan的forward
         logit_original, dist_og, hidden, features = self.forward(x_tid, x_text)
         # print(f"第{i}个批次的logits")
         # print(logit_original)
@@ -85,10 +76,8 @@ class NeuralNetwork(nn.Module):
         # 模态对齐损失
         loss_mse = nn.MSELoss()
         loss_dis = loss_mse(dist_og[0], dist_og[1])
-
-        # hidden的shape为[batch_size,output_dim]
-        # 此时features的shape为[batch_size,2,output_dim],为每一份数据创建了一个副本，进行对比
-        loss_cons = SupConLoss(temperature=2.0) ## 1.0时候0.8949
+        
+        loss_cons = SupConLoss(temperature=2.0)
         loss_constrative = loss_cons(features, y)
 
         losses = [loss_classification, loss_constrative, loss_dis]
@@ -127,7 +116,7 @@ class NeuralNetwork(nn.Module):
         if torch.cuda.is_available():
             self.cuda()
         batch_size = self.config['batch_size']
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=2e-3)  # 原始值为2e-3
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=2e-3) 
 
         X_train_tid = torch.LongTensor(X_train_tid)
         X_train = torch.LongTensor(X_train)
@@ -227,7 +216,7 @@ class MARN(NeuralNetwork):
                                        uV=self.uV, nb_heads=1,
                                        original_adj=original_adj, dropout=0)
         self.image_embedding = resnet50()
-        clip_model, preprocess = clip.load("RN50", device=self.device)  ## ViT-B/32效果不好,这个0.8831
+        clip_model, preprocess = clip.load("RN50", device=self.device)
         self.image_embedding2 = ClipModel(clip_model, preprocess, device=self.device)
         fusion_dim = config['fusion_dim']
         self.model_fusion = VLTransformer(fusion_dim, config)
@@ -253,18 +242,12 @@ class MARN(NeuralNetwork):
         self.model_fusion.apply(my_weight_init)
 
     def forward(self, X_tid, X_text):
-        # 获取文本嵌入
         X_text = self.word_embedding(X_text)
         if self.config['user_self_attention'] == True:
             X_text = self.mh_attention(X_text, X_text, X_text)
-        # 修改文本编码器为lstm
         X_text, _ = self.text_embedding(X_text)
         X_text = X_text.permute(0, 2, 1)
-        # 从GAT获取传播结构
         rembedding = self.gat_relation.forward(X_tid)
-        # # resnet50获取图像嵌入
-        # iembedding = self.image_embedding.forward(X_tid)
-        ## 更换图像编码器为Cliptengx
         iembedding = self.image_embedding2.forward(X_tid)
         conv_block = [rembedding]
         for _, (Conv, max_pooling) in enumerate(zip(self.convs, self.max_poolings)):
@@ -379,16 +362,16 @@ def train_and_test(model):
     #     nn = torch.nn.DataParallel(model(config, adj, original_adj))
     #     nn = nn.module
 
-    # nn.fit(X_train_tid, X_train, y_train,
-    #        X_dev_tid, X_dev, y_dev)
+    nn.fit(X_train_tid, X_train, y_train,
+           X_dev_tid, X_dev, y_dev)
 
     # # 当前最佳模型
-    # nn.load_state_dict(torch.load(
-    #     "exp_result/weibo2/exp_description/best_model_in_each_config/Thread-1_configsingle3_best_model_weights_mfanlstmwithclip_nllLoss_modify"))
+    nn.load_state_dict(torch.load(
+        "exp_result/weibo2/exp_description/best_model_in_each_config/Thread-1_configsingle3_best_model_weights_marn_lstmwithclip_nllLoss_modify"))
 
     # 最佳模型
-    nn.load_state_dict(torch.load(
-        "exp_result/weibo2/exp_description/best_model_in_each_config/best_model"))
+    # nn.load_state_dict(torch.load(
+    #     "exp_result/weibo2/exp_description/best_model_in_each_config/best_model"))
     y_pred = nn.predict(X_test_tid, X_test)
     res = classification_report(y_test, y_pred, target_names=config['target_names'], digits=3, output_dict=True)
     for k, v in res.items():
@@ -409,5 +392,5 @@ np.random.seed(seed)
 random.seed(seed)
 model = MARN
 # os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-# torch.use_deterministic_algorithms(True)  # 查找为啥不能复现代码的原因
+# torch.use_deterministic_algorithms(True) 
 train_and_test(model)
